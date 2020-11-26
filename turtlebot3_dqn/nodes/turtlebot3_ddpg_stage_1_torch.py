@@ -44,7 +44,7 @@ random.seed(1000)
 
 # initialize tensorboard
 current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-log_dir = 'logs/' + current_time
+log_dir = 'logs_ddpg_1/' + current_time
 tensorboard = SummaryWriter(log_dir=log_dir)
 
 
@@ -59,21 +59,33 @@ class ReinforceAgent():
 
         self.load_model = False
         self.load_episode = 0
-        self.n_iterations = 1000
+        self.n_iterations = 10000
         self.episode_step = 10000
 
         self.state_size = state_size
         self.action_size = action_size
         self.episode_step = 10000
         self.discount_factor = 0.99
-        self.learning_rate = 0.0000625
+        self.learning_rate = 0.00025
         
-        self.epsilon = 1.0
-        self.max_epsilon = 1.0   
-        self.min_epsilon = 0.1
-        self.annealing_steps = 10000
+        #self.epsilon = 1.0
+        #self.max_epsilon = 1.0   
+        #self.min_epsilon = 0.1
+        #self.annealing_steps = 1000000
 
-        self.epsilon_decay_step = (self.max_epsilon - self.min_epsilon)/self.annealing_steps
+        self.max_steps = 2500000
+        self.annealing_steps = 100000
+        self.start_epsilon = 1
+        self.end_epsilon_1 = 0.1
+        self.end_epsilon_2 = 0.01
+        self.epsilon = self.start_epsilon
+
+        self.slope1 = -(self.start_epsilon - self.end_epsilon_1)/self.annealing_steps
+        self.constant1 = self.start_epsilon
+        self.slope2 = -(self.end_epsilon_1 - self.end_epsilon_2)/(self.max_steps - self.annealing_steps)
+        self.constant2 = self.end_epsilon_2 - self.slope2*self.max_steps
+
+        #self.epsilon_decay_step = (self.max_epsilon - self.min_epsilon)/self.annealing_steps
         self.batch_size = 64
         self.tau = 0.001
         self.train_start = 50000
@@ -82,6 +94,7 @@ class ReinforceAgent():
         self.buffer_memory = 1000000
         self.batch = []
         self.warmup = 1
+        self.steps = 1
 
 
         self.ou_theta = 0.15
@@ -91,7 +104,7 @@ class ReinforceAgent():
 
         # if gpu is to be used
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+        print('Device:',self.device)
         # initialize Q network and target Q network
         
         self.actor = Actor(self.state_size,self.action_size).to(self.device)
@@ -109,7 +122,7 @@ class ReinforceAgent():
         self.criteria = nn.MSELoss()
         self.actor_optimiser = optim.Adam(self.actor.parameters(),self.learning_rate)
         self.critic_optimiser = optim.Adam(self.critic.parameters(),self.learning_rate)
-        self.save_model_freq = 100
+        self.save_model_freq = 50
 
         # if self.load_model:
         #     self.model.set_weights(load_model(self.dirPath+str(self.load_episode)+".h5").get_weights())
@@ -134,14 +147,20 @@ class ReinforceAgent():
     def getAction(self, state, test = False):
         # process state
         self.actor.eval()
-        if not test and self.epsilon > self.min_epsilon:
-            self.epsilon-=self.epsilon_decay_step
-
+        if not test:
+            #self.epsilon-=self.epsilon_decay_step
+            
+            if self.steps <=  self.annealing_steps:
+              self.epsilon = self.steps*self.slope1 + self.constant1
+        
+            elif self.steps > self.annealing_steps:
+              self.epsilon = self.steps*self.slope2 + self.constant2
+        
         p = random.random()
         if p < self.epsilon:
         	return self.random_action()
 
-        action = self.actor(torch.from_numpy(np.array([state]))).squeeze(0).detach().numpy()
+        action = self.actor(torch.from_numpy(np.array([state])).to(self.device)).squeeze(0).detach().cpu().numpy()
         # print(action)
         # action += (1-test)*max(self.epsilon,0)*self.random_noise.sample()
         action = np.clip(action,-1.,1.)
@@ -241,7 +260,7 @@ if __name__ == '__main__':
         done = False
         state = env.reset()
         score = 0
-        agent.random_noise.reset_states()
+        #agent.random_noise.reset_states()
     
         # inner loop: for each episode step
         for t in range(agent.episode_step):
@@ -253,7 +272,7 @@ if __name__ == '__main__':
                 action = agent.getAction(state)
 
             # print(action.dtype)
-
+            agent.steps += 1
             # take action and return state, reward, status
             next_state, reward, done = env.step(action)
 
