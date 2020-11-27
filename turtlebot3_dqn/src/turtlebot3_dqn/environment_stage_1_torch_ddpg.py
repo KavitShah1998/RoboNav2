@@ -26,9 +26,10 @@ from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from std_srvs.srv import Empty
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
-
 import sys
-sys.path.append('/home/aj18/catkin_ws/src/RoboNav/turtlebot3_dqn/src/turtlebot3_dqn/')
+import os
+# sys.path.append('/home/aj18/catkin_ws/src/turtlebot3_dqn/src/turtlebot3_dqn/')
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from respawnGoal import Respawn
 
 class Env():
@@ -103,6 +104,9 @@ class Env():
         yaw_reward = tr
 
         distance_rate = 2 ** (current_distance / self.goal_distance)
+
+        distance_penalty = -(current_distance)*5
+        # print(current_distance, (round(yaw_reward * 5, 2)) * distance_rate)
         reward = ((round(yaw_reward * 5, 2)) * distance_rate)
         ###
         # rospy.loginfo("------ Reward is: ["+str(reward)+"] ----------------")
