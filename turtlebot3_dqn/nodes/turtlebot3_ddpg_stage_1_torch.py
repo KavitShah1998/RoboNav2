@@ -50,7 +50,7 @@ tensorboard = SummaryWriter(log_dir=log_dir)
 
 
 class ReinforceAgent():
-    def __init__(self, state_size, action_size):
+    def __init__(self, state_size, action_size, test = False):
         
         self.pub_result = rospy.Publisher('result', Float32MultiArray, queue_size=5)
         self.dirPath = os.path.dirname(os.path.realpath(__file__))
@@ -67,6 +67,7 @@ class ReinforceAgent():
         self.episode_step = 10000
         self.discount_factor = 0.99
         self.learning_rate = 0.00025
+        self.test = test 
         
         #self.epsilon = 1.0
         #self.max_epsilon = 1.0   
@@ -229,6 +230,8 @@ class ReinforceAgent():
 
 
 if __name__ == '__main__':
+
+    test = True
     # initialize node
     rospy.init_node('turtlebot3_dqn_stage_1')
     # initialize result publisher
@@ -247,7 +250,7 @@ if __name__ == '__main__':
     env = Env(action_size)
 
     # initialize agent
-    agent = ReinforceAgent(state_size, action_size)
+    agent = ReinforceAgent(state_size, action_size, test)
 
     # set variables
     scores, episodes, total_reward = [], [], []
@@ -266,10 +269,10 @@ if __name__ == '__main__':
         for t in range(agent.episode_step):
             # get action
 
-            if e < agent.warmup:
+            if e < agent.warmup and not test:
                 action = agent.random_action()
             else:
-                action = agent.getAction(state)
+                action = agent.getAction(state,test)
 
             # print(action.dtype)
             agent.steps += 1
@@ -277,10 +280,11 @@ if __name__ == '__main__':
             next_state, reward, done = env.step(action)
 
             # append memory to memory buffer
-            agent.appendMemory((state, action, reward, next_state, done))
+            if not test:
+                agent.appendMemory((state, action, reward, next_state, done))
 
             ## check if replay buffer is ready:
-            if e > agent.warmup and len(agent.buffer) > agent.batch_size:
+            if e > agent.warmup and len(agent.buffer) > agent.batch_size and not test:
                 agent.trainModel()
 
         
@@ -297,17 +301,18 @@ if __name__ == '__main__':
 
             # save to tensorboard
             num = 30
-            tensorboard.add_scalar('step reward', reward, global_step)
-            tensorboard.add_scalar('average step reward (over 30 steps)', 
-                                    sum(total_reward[-num:])/num, global_step)
+
+            if not test:
+                tensorboard.add_scalar('step reward', reward, global_step)
+                tensorboard.add_scalar('average step reward (over 30 steps)', sum(total_reward[-num:])/num, global_step)
 
             # save model after every N episodes
-            if e % agent.save_model_freq == 0 and e != 0:
+            if e % agent.save_model_freq == 0 and e != 0 and not test:
                 torch.save(agent.actor.state_dict(), agent.dirPath + str(e) + 'actor.pth')
                 torch.save(agent.critic.state_dict(), agent.dirPath + str(e) + 'critic.pth')
 
             # timeout after 1200 steps (robot is just moving in circles or so)
-            if t >= 500: # changed this from 500 to 1200 steps
+            if t >= 1200 and not test: # changed this from 500 to 1200 steps
                 rospy.loginfo("Time out!!")
                 done = True
 
@@ -326,9 +331,10 @@ if __name__ == '__main__':
                 param_dictionary = dict(zip(param_keys, param_values))
 
                 # add to tensorboard
-                k = 10
-                tensorboard.add_scalar('episode reward', score, e)
-                tensorboard.add_scalar('average episode reward (over 10 episodes)', 
+                if not test:
+                    k = 10
+                    tensorboard.add_scalar('episode reward', score, e)
+                    tensorboard.add_scalar('average episode reward (over 10 episodes)', 
                                     sum(scores[-k:])/k, e)
                 break
 
