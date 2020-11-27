@@ -26,7 +26,6 @@ import time
 import datetime
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
-print(sys.path)
 from collections import deque
 from std_msgs.msg import Float32MultiArray
 from src.turtlebot3_dqn.environment_stage_1_torch_ddpg import Env
@@ -43,92 +42,127 @@ torch.manual_seed(1000)
 np.random.seed(1000)
 random.seed(1000)
 
-# initialize tensorboard
-current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-log_dir = 'logs_ddpg_1/' + current_time
-tensorboard = SummaryWriter(log_dir=log_dir)
-
-
+# initialize self.tensorboard
+current_time_global = datetime.datetime.now().strftime("%Y_%m_%d-%H:%M:%S")
 
 class ReinforceAgent():
-    def __init__(self, env, state_size, action_size, test = False):
+    def __init__(self, env, state_size, action_size, test = False, cont = False, current_time = current_time_global):
 
+        ############## Init Parameters ##############
         self.env = env
-        self.pub_result = rospy.Publisher('result', Float32MultiArray, queue_size=5)
-        self.dirPath = os.path.dirname(os.path.realpath(__file__))
-        self.dirPath = self.dirPath.replace('turtlebot3_dqn/nodes', 'turtlebot3_dqn/save_model_ddpg/'+current_time+'_stage_1_')
-        self.result = Float32MultiArray()
-
-        self.load_model = False
-        self.load_episode = 0
-        self.n_iterations = 10000
-        self.episode_step = 10000
-
+        self.current_time = current_time
         self.state_size = state_size
         self.action_size = action_size
+        self.test = test
+        self.cont = cont
+
+        ############## Publisher ##############
+        self.pub_result = rospy.Publisher('result', Float32MultiArray, queue_size=5)
+        self.result = Float32MultiArray()
+
+
+        ############## Path Parameters ##############
+        self.dirPath = os.path.dirname(os.path.realpath(__file__))
+        self.dirPath = self.dirPath.replace('turtlebot3_dqn/nodes', 'turtlebot3_dqn/save_model_ddpg/')
+        self.model_path = self.dirPath + self.current_time + '/' + 'stage_1_'
+        self.log_dir = 'logs_ddpg/' + self.current_time
+        self.tensorboard = SummaryWriter(log_dir=self.log_dir)
+
+
+        ############## Train Parameters ##############
+        self.n_iterations = 2000
+        self.episode_step = 5000
+        self.e = 0
         self.episode_step = 10000
         self.discount_factor = 0.99
         self.learning_rate = 0.00025
-        self.test = test
+        self.batch_size = 64
+        self.tau = 0.001
+        self.warmup = 10
+        self.steps = 1
+        self.save_model_freq = 50
+        self.buffer_memory = 1000000
+        self.buffer = []
+        self.batch = []
 
+        ############## Epsilon Parameters ##############
         self.max_steps = 2500000
         self.annealing_steps = 100000
         self.start_epsilon = 1
         self.end_epsilon_1 = 0.1
         self.end_epsilon_2 = 0.01
         self.epsilon = self.start_epsilon
-
         self.slope1 = -(self.start_epsilon - self.end_epsilon_1)/self.annealing_steps
         self.constant1 = self.start_epsilon
         self.slope2 = -(self.end_epsilon_1 - self.end_epsilon_2)/(self.max_steps - self.annealing_steps)
         self.constant2 = self.end_epsilon_2 - self.slope2*self.max_steps
 
-        #self.epsilon_decay_step = (self.max_epsilon - self.min_epsilon)/self.annealing_steps
-        self.batch_size = 64
-        self.tau = 0.001
-        self.train_start = 50000
-        # self.memory = deque(maxlen=1000000)
-        self.buffer = []
-        self.buffer_memory = 1000000
-        self.batch = []
-        self.warmup = 1
-        self.steps = 1
 
-
+        ############## Random_Noise Parameters ##############
         self.ou_theta = 0.15
         self.ou_mu = 0.2
         self.ou_sigma = 0.5
         self.random_noise = OrnsteinUhlenbeckProcess(size=self.action_size, theta=self.ou_theta, mu=self.ou_mu, sigma=self.ou_sigma)
 
-        # if gpu is to be used
+
+        # print(self.dirPath + self.current_time)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print('Device:',self.device)
-        # initialize Q network and target Q network
-        
+
+
+        ############## Initialise Networks ##############
         self.actor = Actor(self.state_size,self.action_size).to(self.device)
         self.critic = Critic(self.state_size,self.action_size).to(self.device)
         
         self.target_actor = Actor(self.state_size,self.action_size).to(self.device)
         self.target_critic = Critic(self.state_size,self.action_size).to(self.device)
 
-        # update the target model
         self.target_actor.load_state_dict(self.actor.state_dict())
         self.target_critic.load_state_dict(self.critic.state_dict())
     
-
-        # define loss function and optimizer
         self.criteria = nn.MSELoss()
         self.actor_optimiser = optim.Adam(self.actor.parameters(),self.learning_rate)
         self.critic_optimiser = optim.Adam(self.critic.parameters(),self.learning_rate)
-        self.save_model_freq = 50
+
+
+        ############## Testing ##############
 
         if self.test:
-            actor_weights = torch.load(self.dirPath + '1700' + 'actor.pth', map_location = self.device)
-            critic_weights = torch.load(self.dirPath + '1700' + 'critic.pth', map_location = self.device)
+            print("############## Testing model ##############")
+            actor_weights = torch.load(self.model_path + '1700' + '_actor.pth', map_location = self.device)
+            critic_weights = torch.load(self.model_path + '1700' + '_critic.pth', map_location = self.device)
             self.actor.load_state_dict(actor_weights)
             self.critic.load_state_dict(critic_weights)
             self.actor.eval()
             self.critic.eval()
+
+        ############## Conitnuing ##############
+        if self.cont:
+            print("############## Resuming Tarining ##############")
+            last_train_memory = torch.load(self.model_path+ 'last_train_memory.tar')
+            self.epsilon = last_train_memory['epsilon']
+            self.e = last_train_memory['e']
+            self.current_time = last_train_memory['current_time']
+            self.steps = last_train_memory['steps']
+            self.buffer = last_train_memory['buffer']
+
+            last_train_weights = torch.load(self.model_path+ 'last_train_weights.tar', map_location = self.device)
+            actor_weights = last_train_weights['actor']
+            critic_weights = last_train_weights['critic']
+            target_actor_weights = last_train_weights['target_actor']
+            target_critic_weights = last_train_weights['target_critic']
+            actor_optimiser_weights = last_train_weights['actor_optimiser']
+            critic_optimiser_weights = last_train_weights['critic_optimiser']
+            self.actor.load_state_dict(actor_weights)
+            self.critic.load_state_dict(critic_weights)
+            self.target_actor.load_state_dict(target_actor_weights)
+            self.target_critic.load_state_dict(target_critic_weights)
+            self.actor_optimiser.load_state_dict(actor_optimiser_weights)
+            self.critic_optimiser.load_state_dict(critic_optimiser_weights)
+            self.actor.train()
+            self.critic.train()
+
+
 
 
     def soft_update(self,model):
@@ -224,7 +258,7 @@ class ReinforceAgent():
         self.soft_update("Critic")
         self.soft_update("Actor")
 
-    def train(self):
+    def train_model(self):
 
         rospy.init_node('turtlebot3_dqn_stage_1')
         # initialize result publisher
@@ -240,9 +274,10 @@ class ReinforceAgent():
         global_step = 0
         # set start time
         start_time = time.time()
+        prev_e = 0
 
         # main loop: for each episode
-        for e in range(self.load_episode + 1, self.n_iterations):
+        for e in range(self.e + 1, self.n_iterations):
             done = False
             state = self.env.reset()
             score = 0
@@ -254,8 +289,8 @@ class ReinforceAgent():
                 else:
                     action = self.getAction(state)
 
-                # print(action.dtype)
                 self.steps += 1
+                self.e = e
                 # take action and return state, reward, status
                 next_state, reward, done = self.env.step(action)
 
@@ -278,16 +313,17 @@ class ReinforceAgent():
                 get_action.data = [action[0],action[1], score, reward]
                 pub_get_action.publish(get_action)
 
-                # save to tensorboard
+                # save to self.tensorboard
                 num = 30
-                tensorboard.add_scalar('step reward', reward, global_step)
-                tensorboard.add_scalar('average step reward (over 30 steps)', 
+                self.tensorboard.add_scalar('step reward', reward, global_step)
+                self.tensorboard.add_scalar('average step reward (over 30 steps)', 
                                         sum(total_reward[-num:])/num, global_step)
 
                 # save model after every N episodes
-                if e % self.save_model_freq == 0 and e != 0:
-                    torch.save(self.actor.state_dict(), self.dirPath + str(e) + 'actor.pth')
-                    torch.save(self.critic.state_dict(), self.dirPath + str(e) + 'critic.pth')
+                if e % self.save_model_freq == 0 and e != prev_e:
+                    print('Saving Model!')
+                    self.save_model()
+                    prev_e = e 
 
                 # timeout after 1200 steps (robot is just moving in circles or so)
                 if t >= 500: # changed this from 500 to 1200 steps
@@ -304,14 +340,10 @@ class ReinforceAgent():
 
                     rospy.loginfo('Ep: %d | score: %.2f | memory: %d | epsilon: %.6f | time: %d:%02d:%02d',
                                   e, score, len(self.buffer), self.epsilon, h, m, s)
-                    param_keys = ['epsilon']
-                    param_values = [self.epsilon]
-                    param_dictionary = dict(zip(param_keys, param_values))
-
-                    # add to tensorboard
+                    # add to self.tensorboard
                     k = 10
-                    tensorboard.add_scalar('episode reward', score, e)
-                    tensorboard.add_scalar('average episode reward (over 10 episodes)', 
+                    self.tensorboard.add_scalar('episode reward', score, e)
+                    self.tensorboard.add_scalar('average episode reward (over 10 episodes)', 
                                         sum(scores[-k:])/k, e)
                     break
 
@@ -351,5 +383,34 @@ class ReinforceAgent():
 
             if done:
                 self.env.reset()
+
+    
+    def save_model(self):
+        # print(self.dirPath + self.current_time)
+        if not os.path.isdir(self.dirPath + self.current_time):
+            print('Creating Directory')
+            os.makedirs(self.dirPath + self.current_time)
+
+        torch.save(self.actor.state_dict(), self.model_path + str(self.e) + '_actor.pth')
+        torch.save(self.critic.state_dict(), self.model_path + str(self.e) + '_critic.pth')
+        torch.save({
+            'epsilon':self.epsilon,
+            'steps':self.steps,
+            'buffer':self.buffer,
+            'e':self.e,
+            'current_time':self.current_time
+            }
+            ,self.model_path+ 'last_train_memory.tar')
+        torch.save({
+            'actor':self.actor.state_dict(),
+            'critic':self.critic.state_dict(),
+            'target_actor':self.target_actor.state_dict(),
+            'target_critic':self.target_critic.state_dict(),
+            'actor_optimiser':self.actor_optimiser.state_dict(),
+            'critic_optimiser':self.critic_optimiser.state_dict()
+            }
+            ,self.model_path+ 'last_train_weights.tar')
+
+
 
 

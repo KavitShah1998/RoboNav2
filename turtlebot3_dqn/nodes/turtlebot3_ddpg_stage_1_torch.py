@@ -31,12 +31,17 @@ if __name__ == '__main__':
 	state_size = 26
 	action_size = 2
 	test = False
+	cont = False
+	current_time = '2020_11_27-15:37:48'
 	env = Env(action_size)
 	if test:
 		agent = ReinforceAgent(env, state_size, action_size, test)
 		agent.test_model(10000)
+	elif cont:
+		agent = ReinforceAgent(env, state_size, action_size, test, cont, current_time)
+		agent.train_model()
 	else:
-		agent = ReinforceAgent(env, state_size, action_size)
-		agent.train()
+		agent = ReinforceAgent(env, state_size, action_size, test, cont)
+		agent.train_model()
 
    
