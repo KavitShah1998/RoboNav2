@@ -105,9 +105,9 @@ class Env():
 
         distance_rate = 2 ** (current_distance / self.goal_distance)
 
-        distance_penalty = -(current_distance)*3
+        distance_penalty = -(current_distance)*5
         # print(current_distance, (round(yaw_reward * 5, 2)) * distance_rate)
-        reward = ((round(yaw_reward * 5, 2)) * distance_rate) + distance_penalty
+        reward = round(((round(yaw_reward * 5, 2)) * distance_rate) + distance_penalty, 2)
         ###
         # rospy.loginfo("------ Reward is: ["+str(reward)+"] ----------------")
         ###
@@ -128,14 +128,14 @@ class Env():
         return reward
 
     def step(self, action):
-        max_angular_vel = 1.5
-        min_angular_vel = -1.5
+        max_angular_vel = 3
+        min_angular_vel = -3
         sigma = (max_angular_vel - min_angular_vel) / 2
         mean = (max_angular_vel + min_angular_vel) / 2
         ang_vel = sigma * action[0] + mean
 
-        max_linear_velocity = 0.3
-        min_linear_velocity = 0.1
+        max_linear_velocity = 0.5
+        min_linear_velocity = 0
 
         sigma_l = (max_linear_velocity - min_linear_velocity) / 2
         mean_l = (max_linear_velocity + min_linear_velocity) / 2

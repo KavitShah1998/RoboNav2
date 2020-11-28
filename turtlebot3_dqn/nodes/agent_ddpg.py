@@ -245,7 +245,7 @@ class ReinforceAgent():
         critic_loss = self.criteria(predicted_q_values.double(),Y.double())
         self.critic_optimiser.zero_grad()
         critic_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1)
+        #torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 1)
         self.critic_optimiser.step()
 
 
