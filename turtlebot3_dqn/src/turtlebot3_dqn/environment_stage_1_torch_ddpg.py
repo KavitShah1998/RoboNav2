@@ -105,9 +105,9 @@ class Env():
 
         distance_rate = 2 ** (current_distance / self.goal_distance)
 
-        distance_penalty = -(current_distance)*5
+        distance_penalty = -(current_distance)*3
         # print(current_distance, (round(yaw_reward * 5, 2)) * distance_rate)
-        reward = ((round(yaw_reward * 5, 2)) * distance_rate)
+        reward = ((round(yaw_reward * 5, 2)) * distance_rate) + distance_penalty
         ###
         # rospy.loginfo("------ Reward is: ["+str(reward)+"] ----------------")
         ###
