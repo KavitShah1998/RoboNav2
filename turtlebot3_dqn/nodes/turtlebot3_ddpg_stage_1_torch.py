@@ -32,7 +32,7 @@ if __name__ == '__main__':
 	action_size = 2
 	test = False
 	cont = False
-	current_time = '2020_11_26-14:49:58'
+	current_time = '2020_11_29-05:59:21'
 	env = Env(action_size)
 	if test:
 		agent = ReinforceAgent(env, state_size, action_size, test, cont, current_time)

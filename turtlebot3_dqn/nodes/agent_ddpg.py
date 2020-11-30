@@ -70,7 +70,7 @@ class ReinforceAgent():
 
 
         ############## Train Parameters ##############
-        self.n_iterations = 2000
+        self.n_iterations = 7000
         self.episode_step = 5000
         self.e = 0
         self.episode_step = 10000
@@ -86,8 +86,8 @@ class ReinforceAgent():
         self.batch = []
 
         ############## Epsilon Parameters ##############
-        self.max_steps = 2500000
-        self.annealing_steps = 100000
+        self.max_steps = 1000000
+        self.annealing_steps = 200000
         self.start_epsilon = 1
         self.end_epsilon_1 = 0.1
         self.end_epsilon_2 = 0.01
@@ -326,7 +326,7 @@ class ReinforceAgent():
                     prev_e = e 
 
                 # timeout after 1200 steps (robot is just moving in circles or so)
-                if t >= 500: # changed this from 500 to 1200 steps
+                if t >= 2000: # changed this from 500 to 1200 steps
                     rospy.loginfo("Time out!!")
                     done = True
 
